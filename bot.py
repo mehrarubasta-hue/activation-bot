@@ -122,7 +122,7 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     if not ALLOWED_USERS:
         await update.message.reply_text("NO USERS ADDED YET.", protect_content=True); return
-    txt = "\n".join([f"🟨 {v.upper()}: {k}" for k,v in ALLOWED_USERS.items()])
+    txt = "\n".join([f"👤 {v.upper()}: {k}" for k,v in ALLOWED_USERS.items()])
     await update.message.reply_text(f"📋 ADDED USERS:\n{txt}", protect_content=True)
 
 async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
