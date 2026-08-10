@@ -16,7 +16,7 @@ SETTINGS_FILE = "settings.json"
 
 logging.basicConfig(level=logging.INFO)
 
-# --- Flask for Render 24/7 ---
+# --- Flask for Render/Koyeb 24/7 ---
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
@@ -46,7 +46,7 @@ def save_all():
     save_json(WORDS_FILE, BANNED_WORDS)
     save_json(SETTINGS_FILE, SETTINGS)
 
-# --- Commands ---
+# --- Commands (same as V2) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid == ADMIN_ID:
@@ -64,7 +64,12 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(ALLOWED_USERS) >= 4:
         await update.message.reply_text("Use: /adduser <id> or Limit Full (4)")
         return
-    nid = context.args[0].strip()
+    nid = context.args[0].strip().strip('<>').strip()
+    # Clean non-digit if any
+    nid = ''.join(filter(str.isdigit, nid))
+    if not nid:
+        await update.message.reply_text("❌ Sahi ID bhejo, jaise: /adduser 871721883")
+        return
     ALLOWED_USERS[nid] = f"User {len(ALLOWED_USERS)+1}"
     save_all()
     await update.message.reply_text(f"✅ {ALLOWED_USERS[nid]} added: {nid}")
@@ -73,9 +78,26 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    if context.args and context.args[0] in ALLOWED_USERS:
-        del ALLOWED_USERS[context.args[0]]; save_all()
-        await update.message.reply_text("✅ Removed")
+    if not context.args:
+        await update.message.reply_text("Use: /removeuser <id>")
+        return
+    rid = context.args[0].strip().strip('<>').strip()
+    rid = ''.join(filter(str.isdigit, rid))
+    # Also handle if old wrong entry <871721883> exists
+    to_del = None
+    if rid in ALLOWED_USERS:
+        to_del = rid
+    else:
+        # search for entry containing rid
+        for k in list(ALLOWED_USERS.keys()):
+            if rid in k:
+                to_del = k
+                break
+    if to_del:
+        del ALLOWED_USERS[to_del]; save_all()
+        await update.message.reply_text(f"✅ Removed {to_del}")
+    else:
+        await update.message.reply_text(f"❌ ID {rid} nahi mila. /users se list dekho")
 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
@@ -110,6 +132,7 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (uid == ADMIN_ID)
     if not is_admin and sid not in ALLOWED_USERS: return
     text_content = update.message.text or update.message.caption or ""
+    # Banned check
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
             await update.message.reply_text(f"⚠️ Blocked - banned word '{bw}'")
@@ -136,18 +159,13 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e: logging.error(e)
 
 def main():
-    # Fix for Python 3.14 - create event loop for MainThread
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    except Exception:
-        pass
-
+    except: pass
     threading.Thread(target=run_flask, daemon=True).start()
-    
     if "APNA_BOT" in BOT_TOKEN or ADMIN_ID == 0:
         print("WARNING: Set BOT_TOKEN and ADMIN_ID in ENV")
-    
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("myid", get_my_id))
@@ -159,9 +177,7 @@ def main():
     app.add_handler(CommandHandler("words", list_words))
     app.add_handler(CommandHandler("togglephoto", toggle_photo))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
-    
     print("Bot + Flask Started for 24/7 hosting")
-    # stop_signals=None is important for Render/Docker
     app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
