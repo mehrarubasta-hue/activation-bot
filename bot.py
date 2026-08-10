@@ -2,7 +2,6 @@ import os
 import json
 import logging
 import threading
-import asyncio
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -64,12 +63,7 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(ALLOWED_USERS) >= 4:
         await update.message.reply_text("Use: /adduser <id> or Limit Full (4)")
         return
-    nid = context.args[0].strip().strip('<>').strip()
-    # Clean non-digit if any
-    nid = ''.join(filter(str.isdigit, nid))
-    if not nid:
-        await update.message.reply_text("❌ Sahi ID bhejo, jaise: /adduser 871721883")
-        return
+    nid = context.args[0].strip()
     ALLOWED_USERS[nid] = f"User {len(ALLOWED_USERS)+1}"
     save_all()
     await update.message.reply_text(f"✅ {ALLOWED_USERS[nid]} added: {nid}")
@@ -78,26 +72,9 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("Use: /removeuser <id>")
-        return
-    rid = context.args[0].strip().strip('<>').strip()
-    rid = ''.join(filter(str.isdigit, rid))
-    # Also handle if old wrong entry <871721883> exists
-    to_del = None
-    if rid in ALLOWED_USERS:
-        to_del = rid
-    else:
-        # search for entry containing rid
-        for k in list(ALLOWED_USERS.keys()):
-            if rid in k:
-                to_del = k
-                break
-    if to_del:
-        del ALLOWED_USERS[to_del]; save_all()
-        await update.message.reply_text(f"✅ Removed {to_del}")
-    else:
-        await update.message.reply_text(f"❌ ID {rid} nahi mila. /users se list dekho")
+    if context.args and context.args[0] in ALLOWED_USERS:
+        del ALLOWED_USERS[context.args[0]]; save_all()
+        await update.message.reply_text("✅ Removed")
 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
@@ -128,41 +105,66 @@ async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Photo: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}")
 
 async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; sid = str(uid)
+    uid = update.effective_user.id
+    sid = str(uid)
     is_admin = (uid == ADMIN_ID)
     if not is_admin and sid not in ALLOWED_USERS: return
+
     text_content = update.message.text or update.message.caption or ""
-    # Banned check
+    
+    # Banned words check
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
-            await update.message.reply_text(f"⚠️ Blocked - banned word '{bw}'")
-            try: await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid)} ne '{bw}' bheja: {text_content[:200]}")
+            await update.message.reply_text(f"⚠️ Message blocked - Contains banned word: '{bw}'", protect_content=True)
+            try:
+                await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid)} tried to send banned word '{bw}': {text_content[:200]}", protect_content=True)
             except: pass
             return
-    if not is_admin and update.message.photo and not SETTINGS["allow_photos"]:
-        await update.message.reply_text("❌ Photo OFF hai"); return
 
-    label = "👑 Admin" if is_admin else ALLOWED_USERS.get(sid, sid)
-    caption = f"{label}: {text_content}" if text_content else f"{label} ne photo bheji 📸"
+    if not is_admin and update.message.photo and not SETTINGS["allow_photos"]:
+        await update.message.reply_text("❌ Photo sharing is currently OFF by Admin.", protect_content=True)
+        return
+
+    # --- NEW: BOLD CAPITAL + USER ICONS ---
+    USER_ICONS = {
+        "USER 1": "👤",
+        "USER 2": "👨‍💼",
+        "USER 3": "🧑‍🔧",
+        "USER 4": "👨‍💻"
+    }
+    
+    if is_admin:
+        icon = "👑"
+        raw_label = "ADMIN"
+    else:
+        raw_label = ALLOWED_USERS.get(sid, sid).upper()  # USER 1 -> USER 1
+        icon = USER_ICONS.get(raw_label, "👤")  # Default icon
+
+    bold_label = f"{icon} <b>{raw_label}</b>"
+    
+    # For forwarded message
+    if text_content:
+        caption = f"{bold_label}: {text_content}"
+    else:
+        caption = f"{bold_label} sent a photo 📸"
+    
     targets = list(ALLOWED_USERS.keys()) + ([str(ADMIN_ID)] if not is_admin else [])
     for tid in targets:
         if tid == sid: continue
         try:
             if update.message.photo:
-                await context.bot.send_photo(int(tid), update.message.photo[-1].file_id, caption=caption)
+                await context.bot.send_photo(int(tid), update.message.photo[-1].file_id, caption=caption, parse_mode="HTML", protect_content=True)
             elif update.message.video:
-                await context.bot.send_video(int(tid), update.message.video.file_id, caption=caption)
+                await context.bot.send_video(int(tid), update.message.video.file_id, caption=caption, parse_mode="HTML", protect_content=True)
             elif update.message.document:
-                await context.bot.send_document(int(tid), update.message.document.file_id, caption=caption)
+                await context.bot.send_document(int(tid), update.message.document.file_id, caption=caption, parse_mode="HTML", protect_content=True)
             else:
-                await context.bot.send_message(int(tid), f"{label}: {text_content}")
-        except Exception as e: logging.error(e)
+                await context.bot.send_message(int(tid), caption, parse_mode="HTML", protect_content=True)
+        except Exception as e:
+            logging.error(e)
+
 
 def main():
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    except: pass
     threading.Thread(target=run_flask, daemon=True).start()
     if "APNA_BOT" in BOT_TOKEN or ADMIN_ID == 0:
         print("WARNING: Set BOT_TOKEN and ADMIN_ID in ENV")
@@ -178,7 +180,7 @@ def main():
     app.add_handler(CommandHandler("togglephoto", toggle_photo))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
     print("Bot + Flask Started for 24/7 hosting")
-    app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
