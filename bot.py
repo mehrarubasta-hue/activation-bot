@@ -149,9 +149,7 @@ async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     SETTINGS["allow_photos"] = not SETTINGS["allow_photos"]; save_all()
     await update.message.reply_text(f"PHOTO SHARING: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}", protect_content=True)
 
-# --- STYLE AS PER YOUR UPLOADED IMAGE ---
-# Yellow label style: 🟨 USER 1 / ADMIN / USER 2 in BOLD CAPITAL
-# Message style: Bold capital as in image
+# --- FINAL FIXED STYLE: Only USER label bold, message normal, user logo not yellow square ---
 async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     sid = str(uid)
@@ -162,7 +160,6 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text_content and not update.message.photo and not update.message.video and not update.message.document:
         return
 
-    # Banned words check
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
             await update.message.reply_text(f"⚠️ MESSAGE BLOCKED - CONTAINS BANNED WORD: '{bw.upper()}'", protect_content=True)
@@ -175,7 +172,6 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ PHOTO SHARING IS OFF BY ADMIN.", protect_content=True)
         return
 
-    # Icons as per image - crown for admin in blue circle, user icons
     USER_ICONS = {
         "USER 1": "👤",
         "USER 2": "👨‍💼",
@@ -185,43 +181,32 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_admin:
         raw_label = "ADMIN"
-        label_emoji = "👑"  # Crown as in your image (blue circle with crown)
-        # Yellow label effect: 🟨 + BOLD BLACK as in image
-        header = f"🟨 <b>{raw_label}</b>"
-        # For actual Telegram, we use bold capital for highlight
-        if text_content:
-            # This will look like your image: ADMIN: WELCOME USER 1, YOUR REQUEST IS APPROVED
-            message_body = f"<b>{raw_label}: {text_content.upper()}</b>"
-        else:
-            message_body = f"<b>{raw_label} SENT A PHOTO 📸</b>"
-        full_caption = f"{header}\n{message_body}"
+        icon = "👑"
     else:
         raw_label = ALLOWED_USERS.get(sid, sid).upper()
         icon = USER_ICONS.get(raw_label, "👤")
-        header = f"🟨 <b>{raw_label}</b>"
-        if text_content:
-            message_body = f"<b>{raw_label}: {text_content.upper()}</b>"
-        else:
-            message_body = f"<b>{raw_label} SENT A PHOTO 📸</b>"
-        full_caption = f"{header}\n{message_body}"
 
-    # Also create simple version without yellow emoji for caption limit
-    simple_caption = message_body
+    # ONLY LABEL BOLD - Message normal (as you requested)
+    if text_content:
+        formatted_text = f"{icon} <b>{raw_label}</b>: {text_content}"
+    else:
+        formatted_text = f"{icon} <b>{raw_label}</b> SENT A PHOTO 📸"
 
     targets = list(ALLOWED_USERS.keys()) + ([str(ADMIN_ID)] if not is_admin else [])
     for tid in targets:
         if tid == sid: continue
         try:
             if update.message.photo:
-                await context.bot.send_photo(int(tid), update.message.photo[-1].file_id, caption=simple_caption, parse_mode="HTML", protect_content=True)
+                await context.bot.send_photo(int(tid), update.message.photo[-1].file_id, caption=formatted_text, parse_mode="HTML", protect_content=True)
             elif update.message.video:
-                await context.bot.send_video(int(tid), update.message.video.file_id, caption=simple_caption, parse_mode="HTML", protect_content=True)
+                await context.bot.send_video(int(tid), update.message.video.file_id, caption=formatted_text, parse_mode="HTML", protect_content=True)
             elif update.message.document:
-                await context.bot.send_document(int(tid), update.message.document.file_id, caption=simple_caption, parse_mode="HTML", protect_content=True)
+                await context.bot.send_document(int(tid), update.message.document.file_id, caption=formatted_text, parse_mode="HTML", protect_content=True)
             else:
-                await context.bot.send_message(int(tid), full_caption, parse_mode="HTML", protect_content=True)
+                await context.bot.send_message(int(tid), formatted_text, parse_mode="HTML", protect_content=True)
         except Exception as e:
             logging.error(e)
+
 
 def main():
     try:
