@@ -127,22 +127,70 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    if context.args:
-        w = " ".join(context.args).lower()
-        if w not in BANNED_WORDS: BANNED_WORDS.append(w); save_all()
-        await update.message.reply_text(f"✅ BANNED WORD ADDED: {w.upper()}", protect_content=True)
+    if not context.args:
+        await update.message.reply_text(
+            "USAGE:
+"
+            "/addword <word> - Single word
+"
+            "/addword word1, word2, word3 - Multiple words
+"
+            "EXAMPLES:
+"
+            "/addword spam
+"
+            "/addword spam, gandu, fake, whatsapp",
+            protect_content=True
+        )
+        return
+    full_text = " ".join(context.args)
+    words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
+    added = []
+    for w in words:
+        if w not in BANNED_WORDS:
+            BANNED_WORDS.append(w)
+            added.append(w)
+    if added:
+        save_all()
+        await update.message.reply_text(f"✅ BANNED WORDS ADDED ({len(added)}):
+" + "
+".join([f"- {w.upper()}" for w in added]), protect_content=True)
+    else:
+        await update.message.reply_text("⚠️ ALL WORDS ALREADY IN BANNED LIST.", protect_content=True)
 
 async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    if context.args:
-        w = " ".join(context.args).lower()
-        if w in BANNED_WORDS: BANNED_WORDS.remove(w); save_all()
-        await update.message.reply_text(f"✅ BANNED WORD REMOVED: {w.upper()}", protect_content=True)
+    if not context.args:
+        await update.message.reply_text("USAGE: /removeword <word> or /removeword word1, word2", protect_content=True)
+        return
+    full_text = " ".join(context.args)
+    words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
+    removed = []
+    for w in words:
+        if w in BANNED_WORDS:
+            BANNED_WORDS.remove(w)
+            removed.append(w)
+    if removed:
+        save_all()
+        await update.message.reply_text(f"✅ BANNED WORDS REMOVED ({len(removed)}):
+" + "
+".join([f"- {w.upper()}" for w in removed]), protect_content=True)
+    else:
+        await update.message.reply_text("❌ WORDS NOT FOUND.", protect_content=True)
+
+async def clear_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    BANNED_WORDS.clear()
+    save_all()
+    await update.message.reply_text("✅ ALL BANNED WORDS CLEARED.", protect_content=True)
 
 async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    txt = "\n".join([w.upper() for w in BANNED_WORDS]) if BANNED_WORDS else "NO BANNED WORDS"
-    await update.message.reply_text(f"🚫 BANNED WORDS:\n{txt}", protect_content=True)
+    txt = "
+".join([f"- {w.upper()}" for w in BANNED_WORDS]) if BANNED_WORDS else "NO BANNED WORDS"
+    await update.message.reply_text(f"🚫 BANNED WORDS ({len(BANNED_WORDS)}):
+{txt}", protect_content=True)
+
 
 async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
@@ -223,6 +271,7 @@ def main():
     app.add_handler(CommandHandler("addword", add_word))
     app.add_handler(CommandHandler("removeword", remove_word))
     app.add_handler(CommandHandler("words", list_words))
+    app.add_handler(CommandHandler("clearwords", clear_words))
     app.add_handler(CommandHandler("togglephoto", toggle_photo))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
     print("Bot Started - Style as per uploaded image - YELLOW LABEL + BOLD CAPITAL")
