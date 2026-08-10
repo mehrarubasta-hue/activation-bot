@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import threading
+import asyncio
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -15,7 +16,7 @@ SETTINGS_FILE = "settings.json"
 
 logging.basicConfig(level=logging.INFO)
 
-# --- Flask for Render/Koyeb 24/7 ---
+# --- Flask for Render 24/7 ---
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
@@ -45,7 +46,7 @@ def save_all():
     save_json(WORDS_FILE, BANNED_WORDS)
     save_json(SETTINGS_FILE, SETTINGS)
 
-# --- Commands (same as V2) ---
+# --- Commands ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid == ADMIN_ID:
@@ -109,7 +110,6 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (uid == ADMIN_ID)
     if not is_admin and sid not in ALLOWED_USERS: return
     text_content = update.message.text or update.message.caption or ""
-    # Banned check
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
             await update.message.reply_text(f"⚠️ Blocked - banned word '{bw}'")
@@ -136,9 +136,18 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e: logging.error(e)
 
 def main():
+    # Fix for Python 3.14 - create event loop for MainThread
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    except Exception:
+        pass
+
     threading.Thread(target=run_flask, daemon=True).start()
+    
     if "APNA_BOT" in BOT_TOKEN or ADMIN_ID == 0:
         print("WARNING: Set BOT_TOKEN and ADMIN_ID in ENV")
+    
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("myid", get_my_id))
@@ -150,8 +159,10 @@ def main():
     app.add_handler(CommandHandler("words", list_words))
     app.add_handler(CommandHandler("togglephoto", toggle_photo))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
+    
     print("Bot + Flask Started for 24/7 hosting")
-    app.run_polling()
+    # stop_signals=None is important for Render/Docker
+    app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
