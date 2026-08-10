@@ -205,7 +205,7 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
-            await update.message.reply_text(f"⚠️ MESSAGE BLOCKED - BANNED WORD: '{bw.upper()}'", protect_content=True)
+            await update.message.reply_text(f"⚠️ MESSAGE BLOCKED - BANNED : '{bw.upper()}'", protect_content=True)
             try:
                 await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid).upper()} TRIED TO SEND BANNED WORD '{bw.upper()}': {text_content[:200]}", protect_content=True)
             except:
