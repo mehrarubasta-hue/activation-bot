@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return "Bot Running 24/7 - V6 Final English"
+    return "Bot Running 24/7 - V7 Final"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -60,7 +60,6 @@ def clean_id(raw):
     s = ''.join(filter(str.isdigit, s))
     return s
 
-# ===== ONLINE STATUS (3 MIN) =====
 def update_activity(uid):
     ACTIVITY[str(uid)] = datetime.now().isoformat()
     save_json(ACTIVITY_FILE, ACTIVITY)
@@ -96,7 +95,6 @@ def is_user_online(uid):
     except:
         return False
 
-# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user = update.effective_user
@@ -108,32 +106,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid == ADMIN_ID:
         online_count = sum(1 for u in ALLOWED_USERS if is_user_online(u))
         await update.message.reply_text(
-            f"👑 ACTIVATION BOT - ADMIN PANEL V6\n"
+            f"👑 ACTIVATION BOT - ADMIN PANEL V7\n"
             f"Photo Sharing: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}\n"
             f"Total Users: {len(ALLOWED_USERS)}/4 | Online: {online_count} | Pending: {len(PENDING_USERS)}\n"
             f"Banned Words: {len(BANNED_WORDS)}\n\n"
             f"USER MANAGEMENT:\n"
             f"/adduser <id/@username> - Add user\n"
-            f"/removeuser <id> - Remove user\n"
+            f"/removeuser - Show users with remove button\n"
+            f"/removeuser <id> - Remove by ID\n"
             f"/users - List users with online status\n"
             f"/online - Live online check\n"
-            f"/status - Same as online\n"
-            f"/pending - Pending join requests\n"
+            f"/pending - Pending requests\n"
             f"/getid - Get ID via reply/forward/username\n"
-            f"/id - Same as getid\n"
-            f"/myid - Get your own ID\n\n"
+            f"/myid - Your ID\n\n"
             f"MESSAGING:\n"
-            f"/broadcast <msg> - Broadcast to all users\n"
-            f"/togglephoto - Toggle photo sharing ON/OFF\n\n"
+            f"/broadcast <msg> - Broadcast\n"
+            f"/togglephoto - Toggle photos\n\n"
             f"WORD FILTER:\n"
-            f"/addword <word1, word2> - Add banned words\n"
-            f"/removeword <word> - Remove banned word\n"
-            f"/words - List banned words\n"
-            f"/clearwords - Clear all banned words\n"
+            f"/addword <words> - Add banned\n"
+            f"/removeword <word> - Remove banned\n"
+            f"/words - List banned\n"
+            f"/clearwords - Clear all\n"
         )
     elif str(uid) in ALLOWED_USERS:
         label = ALLOWED_USERS[str(uid)].upper()
-        await update.message.reply_text(f"✅ WELCOME {label}! YOU ARE CONNECTED.\n🟢 You are now ONLINE\nYou can send text + photos.")
+        await update.message.reply_text(f"✅ WELCOME {label}! YOU ARE CONNECTED.\n🟢 You are now ONLINE")
         try:
             await context.bot.send_message(ADMIN_ID, f"🟢 {label} ({name} {username}) STARTED BOT - ONLINE\nID: {uid}")
         except:
@@ -143,7 +140,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_json(PENDING_FILE, PENDING_USERS)
         
         await update.message.reply_text(
-            f"YOUR ID: `{uid}`\nPLEASE SEND THIS ID TO ADMIN FOR ACCESS.",
+            f"✅ Your request has been sent to Admin.\n"
+            f"Your ID: `{uid}`\n"
+            f"You will receive a message once your request is approved. Please wait.",
             parse_mode="Markdown"
         )
         
@@ -189,7 +188,6 @@ async def get_id_by_username(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except:
                 pass
         target_user = replied_user
-
     elif update.message.forward_origin:
         try:
             origin = update.message.forward_origin
@@ -215,8 +213,7 @@ async def get_id_by_username(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"Name: {target_name}\n"
             f"{target_username}\n"
             f"ID: `{target_id}`\n"
-            f"Status: {get_online_status(target_id)}\n\n"
-            f"Click button to add directly:",
+            f"Status: {get_online_status(target_id)}",
             parse_mode="Markdown",
             reply_markup=keyboard
         )
@@ -254,8 +251,8 @@ async def get_id_by_username(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text(
         "HOW TO GET ID:\n"
-        "1. Forward any user's message to this bot\n"
-        "2. Reply to a message with /getid\n"
+        "1. Forward any user's message\n"
+        "2. Reply with /getid\n"
         "3. /getid @username"
     )
 
@@ -279,7 +276,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         if len(ALLOWED_USERS) >= 4 and uid not in ALLOWED_USERS:
-            await query.edit_message_text(f"❌ LIMIT FULL (4/4)\nCannot add {uid}\nRemove someone first with /removeuser")
+            await query.edit_message_text(f"❌ LIMIT FULL (4/4)\nCannot add {uid}\nRemove someone first.")
             return
         
         is_new = uid not in ALLOWED_USERS
@@ -293,11 +290,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"✅ USER ADDED SUCCESSFULLY!\n\n"
-            f"Name: {user_label}\n"
+            f"User {user_label} has been added successfully.\n"
             f"ID: {uid}\n"
             f"Status: {get_online_status(uid)}\n\n"
-            f"Notification sent to user.",
-            reply_markup=None
+            f"Notification sent to user."
         )
         
         try:
@@ -320,25 +316,32 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("remove_"):
         uid = data.split("_", 1)[1]
         if uid in ALLOWED_USERS:
+            label = ALLOWED_USERS[uid]
             del ALLOWED_USERS[uid]
             if uid in ACTIVITY:
                 del ACTIVITY[uid]
             save_all()
-            await query.edit_message_text(f"✅ REMOVED: {uid}\nUser has been removed.")
+            await query.edit_message_text(f"✅ REMOVED SUCCESSFULLY!\n\nUser {label.upper()} (ID: {uid}) has been removed successfully.")
             try:
-                await context.bot.send_message(int(uid), "❌ You have been removed from Activation Bot by Admin.")
+                await context.bot.send_message(
+                    int(uid),
+                    "❌ You have been removed from Activation Bot by Admin. You can no longer use this bot.\n\n"
+                    "If you want to join again, please click /start to send a new request."
+                )
             except:
                 pass
+        else:
+            await query.edit_message_text(f"❌ User {uid} not found or already removed.")
 
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /adduser <user_id or @username>\nEx: /adduser 871721883")
+        await update.message.reply_text("USAGE: /adduser <id>\nEx: /adduser 871721883")
         return
     if len(ALLOWED_USERS) >= 4:
-        await update.message.reply_text("❌ USER LIMIT REACHED (MAX 4).")
+        await update.message.reply_text("❌ LIMIT REACHED (MAX 4).")
         return
     
     raw_input = context.args[0].strip()
@@ -349,18 +352,18 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat = await context.bot.get_chat(raw_input)
             nid = str(chat.id)
         except:
-            await update.message.reply_text(f"❌ Cannot get ID from {raw_input}. User never started bot.")
+            await update.message.reply_text(f"❌ Cannot get ID from {raw_input}")
             return
 
     if not nid:
-        await update.message.reply_text("❌ INVALID ID. ID must be numeric.")
+        await update.message.reply_text("❌ INVALID ID.")
         return
 
     ALLOWED_USERS[nid] = f"User {len(ALLOWED_USERS)+1}"
     if nid in PENDING_USERS:
         del PENDING_USERS[nid]
     save_all()
-    await update.message.reply_text(f"✅ {ALLOWED_USERS[nid].upper()} ADDED. ID: {nid}")
+    await update.message.reply_text(f"✅ {ALLOWED_USERS[nid].upper()} ADDED. ID: {nid}\nUser has been added successfully.")
     try:
         await context.bot.send_message(int(nid), f"✅ YOU HAVE BEEN ADDED AS {ALLOWED_USERS[nid].upper()}. Please send /start")
     except:
@@ -370,9 +373,21 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
+    
     if not context.args:
-        await update.message.reply_text("USAGE: /removeuser <id>")
+        if not ALLOWED_USERS:
+            await update.message.reply_text("No users added yet.")
+            return
+        txt = "SELECT USER TO REMOVE:\nClick button below to remove directly:\n\n"
+        keyboard = []
+        for k,v in ALLOWED_USERS.items():
+            status = get_online_status(k)
+            txt += f"{v.upper()}: {k}\n   {status}\n\n"
+            keyboard.append([InlineKeyboardButton(f"Remove {v.upper()} - {k}", callback_data=f"remove_{k}")])
+        
+        await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(keyboard))
         return
+    
     rid = clean_id(context.args[0])
     to_del = rid if rid in ALLOWED_USERS else next((k for k in ALLOWED_USERS if rid in k), None)
     if to_del:
@@ -380,9 +395,13 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if to_del in ACTIVITY:
             del ACTIVITY[to_del]
         save_all()
-        await update.message.reply_text(f"✅ REMOVED: {to_del}")
+        await update.message.reply_text(f"✅ REMOVED: {to_del}\nUser has been removed successfully.")
         try:
-            await context.bot.send_message(int(to_del), "❌ You have been removed from Activation Bot by Admin. You can no longer use this bot.")
+            await context.bot.send_message(
+                int(to_del), 
+                "❌ You have been removed from Activation Bot by Admin. You can no longer use this bot.\n\n"
+                "If you want to join again, please click /start to send a new request."
+            )
         except:
             pass
     else:
@@ -395,28 +414,28 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ALLOWED_USERS:
         await update.message.reply_text("NO USERS ADDED YET.")
         return
-    txt = "📋 ADDED USERS - ONLINE STATUS (3 min):\n\n"
+    txt = "ADDED USERS - ONLINE STATUS (3 min):\n\n"
     keyboard = []
     online_count = 0
     for k,v in ALLOWED_USERS.items():
         status = get_online_status(k)
-        if "🟢 ONLINE" in status:
+        if "ONLINE" in status:
             online_count += 1
-        txt += f"👤 {v.upper()}: {k}\n   {status}\n\n"
-        keyboard.append([InlineKeyboardButton(f"❌ Remove {v.upper()}", callback_data=f"remove_{k}")])
+        txt += f"{v.upper()}: {k}\n   {status}\n\n"
+        keyboard.append([InlineKeyboardButton(f"Remove {v.upper()}", callback_data=f"remove_{k}")])
     
-    txt += f"---\n🟢 Online Now: {online_count}/{len(ALLOWED_USERS)}"
+    txt += f"---\nOnline Now: {online_count}/{len(ALLOWED_USERS)}"
     await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None)
 
 async def online_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID and str(update.effective_user.id) not in ALLOWED_USERS:
         return
     update_activity(update.effective_user.id)
-    txt = "📊 LIVE ONLINE STATUS (3 min):\n\n"
-    txt += f"👑 ADMIN ({ADMIN_ID}): {get_online_status(ADMIN_ID)}\n\n"
+    txt = "LIVE ONLINE STATUS (3 min):\n\n"
+    txt += f"ADMIN ({ADMIN_ID}): {get_online_status(ADMIN_ID)}\n\n"
     for k,v in ALLOWED_USERS.items():
         txt += f"{v.upper()}: {get_online_status(k)}\n"
-    txt += "\n💡 User is ONLINE for 3 min after sending a message"
+    txt += "\nUser is ONLINE for 3 min after message"
     await update.message.reply_text(txt)
 
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -431,7 +450,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("✅ Add", callback_data=f"add_{k}"), InlineKeyboardButton("❌ Reject", callback_data=f"reject_{k}")]
         ])
         await update.message.reply_text(
-            f"⏳ PENDING REQUEST:\nName: {v['name']}\n{v['username']}\nID: {k}\nStatus: {get_online_status(k)}",
+            f"PENDING REQUEST:\nName: {v['name']}\n{v['username']}\nID: {k}\nStatus: {get_online_status(k)}",
             reply_markup=keyboard
         )
 
@@ -440,7 +459,7 @@ async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /addword word1, word2, word3\nEx: /addword spam, abuse")
+        await update.message.reply_text("USAGE: /addword word1, word2, word3")
         return
     full_text = " ".join(context.args)
     words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
@@ -451,17 +470,17 @@ async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
             added.append(w)
     if added:
         save_all()
-        msg = f"✅ BANNED WORDS ADDED ({len(added)}):\n" + "\n".join([f"- {w.upper()}" for w in added])
+        msg = f"BANNED WORDS ADDED ({len(added)}):\n" + "\n".join([f"- {w.upper()}" for w in added])
         await update.message.reply_text(msg)
     else:
-        await update.message.reply_text("⚠️ All words already in banned list.")
+        await update.message.reply_text("All words already banned.")
 
 async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /removeword word1, word2\nEx: /removeword spam")
+        await update.message.reply_text("USAGE: /removeword word")
         return
     full_text = " ".join(context.args)
     words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
@@ -472,17 +491,17 @@ async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
             removed.append(w)
     if removed:
         save_all()
-        msg = f"✅ REMOVED ({len(removed)}):\n" + "\n".join([f"- {w.upper()}" for w in removed])
+        msg = f"REMOVED ({len(removed)}):\n" + "\n".join([f"- {w.upper()}" for w in removed])
         await update.message.reply_text(msg)
     else:
-        await update.message.reply_text("❌ Words not found in banned list.")
+        await update.message.reply_text("Words not found.")
 
 async def clear_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     BANNED_WORDS.clear()
     save_all()
-    await update.message.reply_text("✅ ALL BANNED WORDS CLEARED.")
+    await update.message.reply_text("ALL BANNED WORDS CLEARED.")
 
 async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -492,7 +511,7 @@ async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
         txt = "NO BANNED WORDS"
     else:
         txt = "\n".join([f"- {w.upper()}" for w in BANNED_WORDS])
-    await update.message.reply_text(f"🚫 BANNED WORDS ({len(BANNED_WORDS)}):\n{txt}")
+    await update.message.reply_text(f"BANNED WORDS ({len(BANNED_WORDS)}):\n{txt}")
 
 async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -500,24 +519,24 @@ async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_activity(update.effective_user.id)
     SETTINGS["allow_photos"] = not SETTINGS["allow_photos"]
     save_all()
-    await update.message.reply_text(f"PHOTO SHARING: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}")
+    await update.message.reply_text(f"PHOTO SHARING: {'ON' if SETTINGS['allow_photos'] else 'OFF'}")
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /broadcast <your message>\nEx: /broadcast Bot updated!")
+        await update.message.reply_text("USAGE: /broadcast <message>")
         return
     msg = " ".join(context.args)
     count = 0
     for uid in list(ALLOWED_USERS.keys()):
         try:
-            await context.bot.send_message(int(uid), f"📢 ADMIN BROADCAST:\n\n{msg}")
+            await context.bot.send_message(int(uid), f"ADMIN BROADCAST:\n\n{msg}")
             count += 1
         except:
             pass
-    await update.message.reply_text(f"✅ Broadcast sent to {count} users.")
+    await update.message.reply_text(f"Broadcast sent to {count} users.")
 
 async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -531,14 +550,14 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
-            await update.message.reply_text(f"⚠️ MESSAGE BLOCKED - BANNED WORD: '{bw.upper()}'")
+            await update.message.reply_text(f"WARNING MESSAGE BLOCKED - BANNED WORD: '{bw.upper()}'")
             try:
-                await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid).upper()} TRIED TO SEND BANNED WORD '{bw.upper()}': {text_content[:200]}")
+                await context.bot.send_message(ADMIN_ID, f"{ALLOWED_USERS.get(sid, sid).upper()} TRIED BANNED WORD '{bw.upper()}': {text_content[:200]}")
             except:
                 pass
             return
     if not is_admin and update.message.photo and not SETTINGS["allow_photos"]:
-        await update.message.reply_text("❌ PHOTO SHARING IS OFF BY ADMIN.")
+        await update.message.reply_text("PHOTO SHARING IS OFF BY ADMIN.")
         return
     USER_ICONS = {
         "USER 1": "👤",
@@ -554,7 +573,7 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw_label = ALLOWED_USERS.get(sid, sid).upper()
         icon = USER_ICONS.get(raw_label, "👤")
         badge = "🟢" if is_user_online(sid) else "⚫"
-    formatted_text = f"{icon} <b>{raw_label}</b> {badge}: {text_content}" if text_content else f"{icon} <b>{raw_label}</b> {badge} SENT A PHOTO 📸"
+    formatted_text = f"{icon} <b>{raw_label}</b> {badge}: {text_content}" if text_content else f"{icon} <b>{raw_label}</b> {badge} SENT A PHOTO"
     targets = list(ALLOWED_USERS.keys()) + ([str(ADMIN_ID)] if not is_admin else [])
     for tid in targets:
         if tid == sid:
@@ -576,12 +595,12 @@ async def on_startup(app):
         return
     await asyncio.sleep(2)
     try:
-        await app.bot.send_message(ADMIN_ID, "🔄 BOT RESTARTED V6\n✅ All English + Add Button + 3 Min Online\nBot is online!")
+        await app.bot.send_message(ADMIN_ID, "BOT RESTARTED V7\nAll English + Buttons + 3 Min Online\nBot is online!")
     except:
         pass
     for uid in list(ALLOWED_USERS.keys()):
         try:
-            await app.bot.send_message(int(uid), "🔄 BOT RESTARTED\n✅ Activation Bot V6 is online again! You can continue chatting.")
+            await app.bot.send_message(int(uid), "BOT RESTARTED\nActivation Bot V7 is online again!")
         except:
             pass
 
@@ -614,7 +633,7 @@ def main():
     app.add_handler(MessageHandler(filters.FORWARDED & filters.User(user_id=ADMIN_ID), get_id_by_username))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
     
-    print("Bot Started V6 - Final English + Add Button + 3 Min Online")
+    print("Bot Started V7 - Final with all requested changes")
     app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
