@@ -5,8 +5,8 @@ import threading
 import asyncio
 from datetime import datetime, timedelta
 from flask import Flask
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
 BOT_TOKEN = os.getenv("BOT_TOKEN") or "YOUR_BOT_TOKEN_HERE"
@@ -16,14 +16,14 @@ USERS_FILE = "users.json"
 WORDS_FILE = "words.json"
 SETTINGS_FILE = "settings.json"
 PENDING_FILE = "pending.json"
-ACTIVITY_FILE = "activity.json"  # NEW for online status
+ACTIVITY_FILE = "activity.json"
 
 logging.basicConfig(level=logging.INFO)
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return "Bot Running 24/7 - V4 Online Status"
+    return "Bot Running 24/7 - V5 With Add Button"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -60,7 +60,7 @@ def clean_id(raw):
     s = ''.join(filter(str.isdigit, s))
     return s
 
-# ===== ONLINE STATUS FUNCTIONS =====
+# ===== ONLINE STATUS (3 MIN) =====
 def update_activity(uid):
     ACTIVITY[str(uid)] = datetime.now().isoformat()
     save_json(ACTIVITY_FILE, ACTIVITY)
@@ -69,28 +69,25 @@ def get_online_status(uid):
     uid_str = str(uid)
     if uid_str not in ACTIVITY:
         return "⚫ OFFLINE (never active)"
-    
     try:
         last_time = datetime.fromisoformat(ACTIVITY[uid_str])
         now = datetime.now()
         diff = now - last_time
         seconds = diff.total_seconds()
-        
-        if seconds < 180:  # 3 minutes
-            mins = int(seconds // 60)
-            if mins == 0:
-                return f"🟢 ONLINE (active {int(seconds)}s ago)"
+        if seconds < 180:  # 3 MINUTES as requested
+            if seconds < 60:
+                return f"🟢 ONLINE ({int(seconds)}s ago)"
             else:
-                return f"🟢 ONLINE (active {mins}m ago)"
-        elif seconds < 3600:  # less than 1 hour
+                return f"🟢 ONLINE ({int(seconds//60)}m ago)"
+        elif seconds < 3600:
             mins = int(seconds // 60)
             return f"🟡 {mins}m ago"
-        elif seconds < 86400:  # less than 24 hours
+        elif seconds < 86400:
             hours = int(seconds // 3600)
             return f"⚫ {hours}h ago"
         else:
             days = int(seconds // 86400)
-            return f"⚫ {days}d ago - {last_time.strftime('%d/%m %H:%M')}"
+            return f"⚫ {days}d ago"
     except:
         return "⚫ OFFLINE"
 
@@ -104,181 +101,249 @@ def is_user_online(uid):
     except:
         return False
 
-# ===== START COMMAND =====
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user = update.effective_user
     username = f"@{user.username}" if user.username else "No Username"
     name = user.first_name or "User"
     
-    # Update activity for anyone who starts
     update_activity(uid)
 
     if uid == ADMIN_ID:
         online_count = sum(1 for u in ALLOWED_USERS if is_user_online(u))
         await update.message.reply_text(
-            f"👑 ACTIVATION BOT - ADMIN PANEL V4\n"
-            f"Photo Sharing: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}\n"
-            f"Total Users: {len(ALLOWED_USERS)}/4 | Online: {online_count} | Pending: {len(PENDING_USERS)}\n\n"
-            "Commands:\n"
-            "/users - List users with Online/Offline\n"
-            "/online - Check who is online now\n"
-            "/adduser <id/@username> - Add user\n"
-            "/removeuser <id> - Remove user\n"
-            "/pending - List pending requests\n"
-            "/getid - Reply/Forward se ID nikalo\n"
-            "/broadcast <msg> - Sabko message bhejo\n"
-            "/addword <word1, word2> - Add banned words\n"
-            "/words - Show banned words\n"
-            "/togglephoto - ON/OFF photo sharing\n"
-            "/myid - Get your ID"
+            f"👑 ACTIVATION BOT V5\n"
+            f"Photo: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}\n"
+            f"Users: {len(ALLOWED_USERS)}/4 | Online: {online_count} | Pending: {len(PENDING_USERS)}\n\n"
+            "/users - Users with Online status\n"
+            "/online - Live online check\n"
+            "/pending - Pending requests\n"
+            "/getid - Forward/Reply se ID\n"
+            "/broadcast <msg>\n"
+            "/adduser /removeuser"
         )
     elif str(uid) in ALLOWED_USERS:
         label = ALLOWED_USERS[str(uid)].upper()
-        await update.message.reply_text(f"✅ WELCOME {label}! YOU ARE CONNECTED.\n🟢 You are now ONLINE")
+        await update.message.reply_text(f"✅ WELCOME {label}! YOU ARE CONNECTED. 🟢 ONLINE")
         try:
-            await context.bot.send_message(
-                ADMIN_ID,
-                f"🟢 {label} ({name} {username}) ne bot START kiya - ONLINE\nID: {uid}"
-            )
+            await context.bot.send_message(ADMIN_ID, f"🟢 {label} ({name} {username}) START - ONLINE\nID: {uid}")
         except:
             pass
     else:
-        PENDING_USERS[str(uid)] = {
-            "name": name,
-            "username": username,
-            "id": uid
-        }
+        PENDING_USERS[str(uid)] = {"name": name, "username": username, "id": uid}
         save_json(PENDING_FILE, PENDING_USERS)
         
-        await update.message.reply_text(
-            f"YOUR ID: `{uid}`\nPLEASE SEND THIS ID TO ADMIN FOR ACCESS.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"YOUR ID: `{uid}`\nAdmin ko bhejo.", parse_mode="Markdown")
+        
+        # NEW V5: Button for direct add
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Add User", callback_data=f"add_{uid}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{uid}")
+            ]
+        ])
         try:
             await context.bot.send_message(
                 ADMIN_ID,
-                f"🔔 NEW JOIN REQUEST\n👤 Name: {name}\n{username}\n🆔 ID: `{uid}`\n\nAdd karne ke liye: /adduser {uid}",
-                parse_mode="Markdown"
+                f"🔔 NEW JOIN REQUEST\n👤 Name: {name}\n{username}\n🆔 ID: {uid}\n📊 {get_online_status(uid)}\n\nNeeche button se direct add karo:",
+                parse_mode="Markdown",
+                reply_markup=keyboard
             )
         except:
             pass
 
 async def get_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_activity(update.effective_user.id)
-    await update.message.reply_text(f"YOUR TELEGRAM ID: `{update.effective_user.id}`", parse_mode="Markdown")
+    await update.message.reply_text(f"ID: `{update.effective_user.id}`", parse_mode="Markdown")
 
-# ===== GET ID =====
+# ===== GET ID WITH BUTTON =====
 async def get_id_by_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     
+    target_user = None
+    target_id = None
+    target_name = None
+    target_username = None
+
     if update.message.reply_to_message:
         replied_user = update.message.reply_to_message.from_user
         fwd = update.message.reply_to_message.forward_origin
         if fwd:
             try:
-                if hasattr(fwd, 'sender_user'):
+                if hasattr(fwd, 'sender_user') and fwd.sender_user:
                     replied_user = fwd.sender_user
-                elif hasattr(fwd, 'chat'):
-                    await update.message.reply_text(f"Forwarded Chat: {fwd.chat.title or fwd.chat.username}\nID: {fwd.chat.id}")
-                    return
             except:
                 pass
-        
-        username = f"@{replied_user.username}" if replied_user.username else "No username"
-        status = get_online_status(replied_user.id)
-        await update.message.reply_text(
-            f"👤 Name: {replied_user.first_name}\n{username}\n🆔 ID: `{replied_user.id}`\n📊 Status: {status}\n\nAdd karne ke liye: /adduser {replied_user.id}",
-            parse_mode="Markdown"
-        )
-        return
+        target_user = replied_user
 
-    if update.message.forward_origin:
+    elif update.message.forward_origin:
         try:
             origin = update.message.forward_origin
             if hasattr(origin, 'sender_user') and origin.sender_user:
-                u = origin.sender_user
-                username = f"@{u.username}" if u.username else "No username"
-                status = get_online_status(u.id)
-                await update.message.reply_text(
-                    f"📨 Forwarded From:\n👤 {u.first_name}\n{username}\n🆔 ID: `{u.id}`\n📊 {status}\n\n/adduser {u.id}",
-                    parse_mode="Markdown"
-                )
-                return
-        except Exception as e:
-            logging.error(e)
+                target_user = origin.sender_user
+        except:
+            pass
+
+    if target_user:
+        target_id = str(target_user.id)
+        target_name = target_user.first_name
+        target_username = f"@{target_user.username}" if target_user.username else "No username"
+        
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Add User", callback_data=f"add_{target_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{target_id}")
+            ],
+            [
+                InlineKeyboardButton(f"👤 {target_name}", callback_data="noop")
+            ]
+        ])
+        
+        await update.message.reply_text(
+            f"📩 Forwarded From:\n👤 {target_name}\n{target_username}\n🆔 ID: `{target_id}`\n📊 {get_online_status(target_id)}\n\nButton dabao direct add karne ke liye:",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return
 
     if context.args:
         raw = context.args[0].strip()
         if raw.startswith('@'):
-            raw_username = raw
+            try:
+                chat = await context.bot.get_chat(raw)
+                target_id = str(chat.id)
+                target_name = chat.first_name or chat.title
+                target_username = raw
+                
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Add User", callback_data=f"add_{target_id}")]
+                ])
+                await update.message.reply_text(
+                    f"🔍 Found: {raw}\n👤 {target_name}\n🆔 ID: `{target_id}`\n📊 {get_online_status(target_id)}",
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
+            except BadRequest as e:
+                await update.message.reply_text(f"❌ {raw} nahi mila: {e}")
+            return
         else:
             nid = clean_id(raw)
             if nid:
-                status = get_online_status(nid)
-                await update.message.reply_text(f"ID: {nid}\nStatus: {status}\n/adduser {nid}")
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Add User", callback_data=f"add_{nid}")]
+                ])
+                await update.message.reply_text(
+                    f"ID: {nid}\nStatus: {get_online_status(nid)}",
+                    reply_markup=keyboard
+                )
                 return
-            raw_username = "@" + raw if not raw.startswith('@') else raw
+
+    await update.message.reply_text("📌 ID nikalo:\n1. Kisi ka message forward karo\n2. Reply karke /getid\n3. /getid @username")
+
+# ===== BUTTON CALLBACK - MAIN NEW FEATURE =====
+async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("Only Admin can use this!", show_alert=True)
+        return
+    
+    data = query.data
+    
+    if data == "noop":
+        return
+    
+    if data.startswith("add_"):
+        uid = data.split("_", 1)[1]
+        uid = clean_id(uid)
+        
+        if not uid:
+            await query.edit_message_text("❌ Invalid ID")
+            return
+        
+        if len(ALLOWED_USERS) >= 4 and uid not in ALLOWED_USERS:
+            await query.edit_message_text(f"❌ LIMIT FULL (4/4)\nCannot add {uid}\nPehle kisi ko /removeuser se hatao.")
+            return
+        
+        is_new = uid not in ALLOWED_USERS
+        ALLOWED_USERS[uid] = f"User {len(ALLOWED_USERS)+1}" if is_new else ALLOWED_USERS[uid]
+        
+        if uid in PENDING_USERS:
+            del PENDING_USERS[uid]
+        
+        save_all()
+        
+        user_label = ALLOWED_USERS[uid].upper()
+        
+        # Edit original message to show added
+        await query.edit_message_text(
+            f"✅ USER ADDED SUCCESSFULLY!\n\n👤 {user_label}\n🆔 ID: {uid}\n📊 {get_online_status(uid)}\n\nUser ko notification bhej diya gaya hai.",
+            reply_markup=None
+        )
+        
+        # Notify added user
+        try:
+            await context.bot.send_message(
+                int(uid),
+                f"✅ YOU HAVE BEEN ADDED AS {user_label}!\nBot me /start karo."
+            )
+        except:
+            pass
+            
+    elif data.startswith("reject_"):
+        uid = data.split("_", 1)[1]
+        uid = clean_id(uid)
+        
+        if uid in PENDING_USERS:
+            del PENDING_USERS[uid]
+            save_json(PENDING_FILE, PENDING_USERS)
+        
+        await query.edit_message_text(f"❌ REJECTED\nID: {uid} ko add nahi kiya gaya.", reply_markup=None)
         
         try:
-            chat = await context.bot.get_chat(raw_username)
-            status = get_online_status(chat.id)
-            await update.message.reply_text(
-                f"🔍 Found: {raw_username}\n👤 Name: {chat.first_name or chat.title}\n🆔 ID: `{chat.id}`\n📊 {status}\n\n/adduser {chat.id}",
-                parse_mode="Markdown"
-            )
-        except BadRequest as e:
-            await update.message.reply_text(f"❌ Username {raw_username} nahi mila. Error: {e}")
-        return
+            await context.bot.send_message(int(uid), "❌ Aapki join request reject kar di gayi hai Admin dwara.")
+        except:
+            pass
 
-    await update.message.reply_text(
-        "📌 ID kaise nikale:\n"
-        "1. Kisi user ke message ko yahan forward karo\n"
-        "2. Kisi message ka reply karke /getid likho\n"
-        "3. /getid @username"
-    )
+    elif data.startswith("remove_"):
+        uid = data.split("_", 1)[1]
+        if uid in ALLOWED_USERS:
+            del ALLOWED_USERS[uid]
+            if uid in ACTIVITY:
+                del ACTIVITY[uid]
+            save_all()
+            await query.edit_message_text(f"✅ REMOVED: {uid}")
 
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /adduser <user_id or @username>")
+        await update.message.reply_text("USAGE: /adduser <id>")
         return
     if len(ALLOWED_USERS) >= 4:
-        await update.message.reply_text("❌ USER LIMIT REACHED (MAX 4).")
+        await update.message.reply_text("❌ LIMIT 4 FULL.")
         return
-    
-    raw_input = context.args[0].strip()
-    nid = clean_id(raw_input)
-    
-    if not nid and raw_input.startswith('@'):
-        try:
-            chat = await context.bot.get_chat(raw_input)
-            nid = str(chat.id)
-        except:
-            await update.message.reply_text(f"❌ Username {raw_input} se ID nahi nikal paya.")
-            return
-    elif not nid:
-        try:
-            chat = await context.bot.get_chat("@" + raw_input.lstrip('@'))
-            nid = str(chat.id)
-        except:
-            pass
-
+    nid = clean_id(context.args[0])
     if not nid:
-        await update.message.reply_text("❌ INVALID ID/USERNAME.")
-        return
-
+        # Try username
+        try:
+            chat = await context.bot.get_chat(context.args[0])
+            nid = str(chat.id)
+        except:
+            await update.message.reply_text("❌ Invalid ID")
+            return
     ALLOWED_USERS[nid] = f"User {len(ALLOWED_USERS)+1}"
     if nid in PENDING_USERS:
         del PENDING_USERS[nid]
     save_all()
-    await update.message.reply_text(f"✅ {ALLOWED_USERS[nid].upper()} ADDED. ID: {nid}")
+    await update.message.reply_text(f"✅ {ALLOWED_USERS[nid].upper()} ADDED: {nid}")
     try:
-        await context.bot.send_message(int(nid), f"✅ YOU HAVE BEEN ADDED AS {ALLOWED_USERS[nid].upper()}. SEND /start")
+        await context.bot.send_message(int(nid), f"✅ ADDED AS {ALLOWED_USERS[nid].upper()}. /start karo")
     except:
         pass
 
@@ -298,51 +363,41 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_all()
         await update.message.reply_text(f"✅ REMOVED: {to_del}")
         try:
-            await context.bot.send_message(
-                int(to_del),
-                "❌ Aapko Activation Bot se remove kar diya gaya hai Admin dwara."
-            )
+            await context.bot.send_message(int(to_del), "❌ Aapko bot se remove kar diya gaya hai.")
         except:
             pass
     else:
         await update.message.reply_text(f"❌ ID {rid} NOT FOUND.")
 
-# ===== UPDATED USERS LIST WITH ONLINE STATUS - MAIN FEATURE =====
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     update_activity(update.effective_user.id)
     if not ALLOWED_USERS:
-        await update.message.reply_text("NO USERS ADDED YET.")
+        await update.message.reply_text("NO USERS.")
         return
-    
-    txt = "📋 ADDED USERS - ONLINE STATUS:\n\n"
+    txt = "📋 USERS - ONLINE STATUS (3 min):\n\n"
+    keyboard = []
     online_count = 0
     for k,v in ALLOWED_USERS.items():
         status = get_online_status(k)
         if "🟢 ONLINE" in status:
             online_count += 1
         txt += f"👤 {v.upper()}: {k}\n   {status}\n\n"
+        keyboard.append([InlineKeyboardButton(f"❌ Remove {v.upper()}", callback_data=f"remove_{k}")])
     
-    txt += f"---\n🟢 Online Now: {online_count}/{len(ALLOWED_USERS)}"
-    await update.message.reply_text(txt)
+    txt += f"🟢 Online: {online_count}/{len(ALLOWED_USERS)}"
+    await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None)
 
 async def online_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID and str(update.effective_user.id) not in ALLOWED_USERS:
         return
     update_activity(update.effective_user.id)
-    
-    txt = "📊 LIVE ONLINE STATUS:\n\n"
-    txt += f"👑 ADMIN ({ADMIN_ID}): {get_online_status(ADMIN_ID)}\n\n"
-    
-    if not ALLOWED_USERS:
-        txt += "No users added."
-    else:
-        for k,v in ALLOWED_USERS.items():
-            status = get_online_status(k)
-            txt += f"{v.upper()}: {status}\n"
-    
-    txt += "\n💡 User 3 min me message bhejta hai to ONLINE dikhega"
+    txt = "📊 LIVE STATUS (3 min):\n\n"
+    txt += f"👑 ADMIN: {get_online_status(ADMIN_ID)}\n\n"
+    for k,v in ALLOWED_USERS.items():
+        txt += f"{v.upper()}: {get_online_status(k)}\n"
+    txt += "\n💡 3 min me message bheja to ONLINE"
     await update.message.reply_text(txt)
 
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -350,20 +405,22 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     update_activity(update.effective_user.id)
     if not PENDING_USERS:
-        await update.message.reply_text("No pending requests.")
+        await update.message.reply_text("No pending.")
         return
-    txt = ""
-    for k,v in PENDING_USERS.items():
-        status = get_online_status(k)
-        txt += f"👤 {v['name']} {v['username']} - {k}\n   {status}\n"
-    await update.message.reply_text(f"⏳ PENDING REQUESTS:\n{txt}")
+    for k,v in list(PENDING_USERS.items())[:10]:  # Show 10 at a time
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Add", callback_data=f"add_{k}"), InlineKeyboardButton("❌ Reject", callback_data=f"reject_{k}")]
+        ])
+        await update.message.reply_text(
+            f"⏳ PENDING:\n👤 {v['name']} {v['username']}\n🆔 {k}\n{get_online_status(k)}",
+            reply_markup=keyboard
+        )
 
 async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /addword word1, word2, word3")
+        await update.message.reply_text("USAGE: /addword word1, word2")
         return
     full_text = " ".join(context.args)
     words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
@@ -374,73 +431,56 @@ async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
             added.append(w)
     if added:
         save_all()
-        msg = "✅ BANNED WORDS ADDED (%d):\n" % len(added) + "\n".join(["- " + w.upper() for w in added])
-        await update.message.reply_text(msg)
+        await update.message.reply_text(f"✅ Added {len(added)} words")
     else:
-        await update.message.reply_text("⚠️ ALL WORDS ALREADY IN BANNED LIST.")
+        await update.message.reply_text("Already exists")
+
+async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    txt = "\n".join(BANNED_WORDS) or "No banned words"
+    await update.message.reply_text(f"🚫 Banned ({len(BANNED_WORDS)}):\n{txt}")
 
 async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /removeword word1, word2")
         return
-    full_text = " ".join(context.args)
-    words = [w.strip().lower() for w in full_text.split(',') if w.strip()]
-    removed = []
-    for w in words:
-        if w in BANNED_WORDS:
-            BANNED_WORDS.remove(w)
-            removed.append(w)
-    if removed:
+    w = " ".join(context.args).lower()
+    if w in BANNED_WORDS:
+        BANNED_WORDS.remove(w)
         save_all()
-        msg = "✅ REMOVED (%d):\n" % len(removed) + "\n".join(["- " + w.upper() for w in removed])
-        await update.message.reply_text(msg)
-    else:
-        await update.message.reply_text("❌ WORDS NOT FOUND.")
+        await update.message.reply_text(f"Removed {w}")
 
 async def clear_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     BANNED_WORDS.clear()
     save_all()
-    await update.message.reply_text("✅ ALL BANNED WORDS CLEARED.")
-
-async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    update_activity(update.effective_user.id)
-    if not BANNED_WORDS:
-        txt = "NO BANNED WORDS"
-    else:
-        txt = "\n".join(["- " + w.upper() for w in BANNED_WORDS])
-    await update.message.reply_text(f"🚫 BANNED WORDS ({len(BANNED_WORDS)}):\n{txt}")
+    await update.message.reply_text("Cleared")
 
 async def toggle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    update_activity(update.effective_user.id)
     SETTINGS["allow_photos"] = not SETTINGS["allow_photos"]
     save_all()
-    await update.message.reply_text(f"PHOTO SHARING: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}")
+    await update.message.reply_text(f"Photo: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}")
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    update_activity(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("USAGE: /broadcast <your message>")
+        await update.message.reply_text("USAGE: /broadcast msg")
         return
     msg = " ".join(context.args)
     count = 0
     for uid in list(ALLOWED_USERS.keys()):
         try:
-            await context.bot.send_message(int(uid), f"📢 ADMIN BROADCAST:\n\n{msg}")
+            await context.bot.send_message(int(uid), f"📢 BROADCAST:\n\n{msg}")
             count += 1
         except:
             pass
-    await update.message.reply_text(f"✅ Broadcast sent to {count} users.")
+    await update.message.reply_text(f"Sent to {count}")
 
 async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -448,45 +488,25 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (uid == ADMIN_ID)
     if not is_admin and sid not in ALLOWED_USERS:
         return
-    
-    # Update activity on every message - KEY FOR ONLINE STATUS
     update_activity(uid)
-    
     text_content = update.message.text or update.message.caption or ""
     if not text_content and not update.message.photo and not update.message.video and not update.message.document:
         return
     for bw in BANNED_WORDS:
         if bw in text_content.lower():
-            await update.message.reply_text(f"⚠️ MESSAGE BLOCKED - BANNED WORD: '{bw.upper()}'")
+            await update.message.reply_text(f"⚠️ Blocked: {bw.upper()}")
             try:
-                await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid).upper()} TRIED TO SEND BANNED WORD '{bw.upper()}': {text_content[:200]}")
+                await context.bot.send_message(ADMIN_ID, f"🚨 {ALLOWED_USERS.get(sid, sid)} tried banned: {bw}")
             except:
                 pass
             return
     if not is_admin and update.message.photo and not SETTINGS["allow_photos"]:
-        await update.message.reply_text("❌ PHOTO SHARING IS OFF BY ADMIN.")
+        await update.message.reply_text("❌ Photo OFF")
         return
-    USER_ICONS = {
-        "USER 1": "👤",
-        "USER 2": "👨‍💼",
-        "USER 3": "🧑‍🔧",
-        "USER 4": "👨‍💻"
-    }
-    if is_admin:
-        raw_label = "ADMIN"
-        icon = "👑"
-        online_badge = "🟢" if is_user_online(uid) else "⚫"
-    else:
-        raw_label = ALLOWED_USERS.get(sid, sid).upper()
-        icon = USER_ICONS.get(raw_label, "👤")
-        online_badge = "🟢" if is_user_online(sid) else "⚫"
-    
-    # Show online status in forwarded messages
-    if text_content:
-        formatted_text = f"{icon} <b>{raw_label}</b> {online_badge}: {text_content}"
-    else:
-        formatted_text = f"{icon} <b>{raw_label}</b> {online_badge} SENT A PHOTO 📸"
-    
+    label = "👑 Admin" if is_admin else ALLOWED_USERS.get(sid, "User").upper()
+    icon = "👑" if is_admin else "👤"
+    badge = "🟢" if is_user_online(uid) else "⚫"
+    formatted_text = f"{icon} <b>{label}</b> {badge}: {text_content}" if text_content else f"{icon} <b>{label}</b> {badge} 📸"
     targets = list(ALLOWED_USERS.keys()) + ([str(ADMIN_ID)] if not is_admin else [])
     for tid in targets:
         if tid == sid:
@@ -508,12 +528,12 @@ async def on_startup(app):
         return
     await asyncio.sleep(2)
     try:
-        await app.bot.send_message(ADMIN_ID, "🔄 BOT RESTARTED V4\n✅ Online Status Feature Added!\nBot is online.")
+        await app.bot.send_message(ADMIN_ID, "🔄 BOT V5 RESTARTED\n✅ Add Button + 3 Min Online Added!")
     except:
         pass
     for uid in list(ALLOWED_USERS.keys()):
         try:
-            await app.bot.send_message(int(uid), "🔄 BOT RESTARTED\n✅ Activation Bot V4 is online again! New: Online status feature added.")
+            await app.bot.send_message(int(uid), "🔄 BOT RESTARTED\n✅ V5 Online! New: Add button feature.")
         except:
             pass
 
@@ -524,7 +544,6 @@ def main():
     except:
         pass
     threading.Thread(target=run_flask, daemon=True).start()
-    
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(on_startup).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -543,10 +562,11 @@ def main():
     app.add_handler(CommandHandler("clearwords", clear_words))
     app.add_handler(CommandHandler("togglephoto", toggle_photo))
     app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(MessageHandler(filters.FORWARDED & filters.User(user_id=ADMIN_ID), get_id_by_username))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
     
-    print("Bot Started V4 - Online Status Added")
+    print("Bot Started V5 - Add Button + 3 Min Online")
     app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
