@@ -5,7 +5,7 @@ import threading
 import asyncio
 from datetime import datetime
 from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return "Bot Running 24/7 - V7 Final"
+    return "Bot Running 24/7 - V8 Menu Button"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -106,27 +106,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid == ADMIN_ID:
         online_count = sum(1 for u in ALLOWED_USERS if is_user_online(u))
         await update.message.reply_text(
-            f"👑 ACTIVATION BOT - ADMIN PANEL V7\n"
+            f"👑 ACTIVATION BOT - ADMIN PANEL V8\n"
             f"Photo Sharing: {'ON ✅' if SETTINGS['allow_photos'] else 'OFF ❌'}\n"
             f"Total Users: {len(ALLOWED_USERS)}/4 | Online: {online_count} | Pending: {len(PENDING_USERS)}\n"
             f"Banned Words: {len(BANNED_WORDS)}\n\n"
-            f"USER MANAGEMENT:\n"
-            f"/adduser <id/@username> - Add user\n"
-            f"/removeuser - Show users with remove button\n"
-            f"/removeuser <id> - Remove by ID\n"
-            f"/users - List users with online status\n"
-            f"/online - Live online check\n"
-            f"/pending - Pending requests\n"
-            f"/getid - Get ID via reply/forward/username\n"
-            f"/myid - Your ID\n\n"
-            f"MESSAGING:\n"
-            f"/broadcast <msg> - Broadcast\n"
-            f"/togglephoto - Toggle photos\n\n"
-            f"WORD FILTER:\n"
-            f"/addword <words> - Add banned\n"
-            f"/removeword <word> - Remove banned\n"
-            f"/words - List banned\n"
-            f"/clearwords - Clear all\n"
+            f"Use Menu button below for all commands.\n"
+            f"Or type commands manually:\n"
+            f"/users, /online, /removeuser, /pending, /getid, /broadcast etc.\n"
         )
     elif str(uid) in ALLOWED_USERS:
         label = ALLOWED_USERS[str(uid)].upper()
@@ -593,14 +579,50 @@ async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_startup(app):
     if ADMIN_ID == 0:
         return
-    await asyncio.sleep(2)
+    
+    # ===== MENU BUTTON SETUP - NEW FEATURE =====
+    # Default menu for all users - only /start
+    default_commands = [
+        BotCommand("start", "Start bot / Request access")
+    ]
+    
+    # Admin menu - all admin commands
+    admin_commands = [
+        BotCommand("start", "Admin panel / Start"),
+        BotCommand("users", "List users with online status"),
+        BotCommand("online", "Live online check"),
+        BotCommand("removeuser", "Remove user - with buttons"),
+        BotCommand("adduser", "Add user by ID"),
+        BotCommand("pending", "Pending join requests"),
+        BotCommand("getid", "Get ID via forward/reply"),
+        BotCommand("broadcast", "Broadcast message to all"),
+        BotCommand("words", "List banned words"),
+        BotCommand("addword", "Add banned words"),
+        BotCommand("removeword", "Remove banned word"),
+        BotCommand("clearwords", "Clear all banned words"),
+        BotCommand("togglephoto", "Toggle photo sharing"),
+        BotCommand("myid", "Get your own ID"),
+    ]
+    
     try:
-        await app.bot.send_message(ADMIN_ID, "BOT RESTARTED V7\nAll English + Buttons + 3 Min Online\nBot is online!")
+        # Set default commands for everyone (only /start)
+        await app.bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
+        logging.info("Default menu set: /start only")
+        
+        # Set admin commands only for admin chat
+        await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+        logging.info(f"Admin menu set for {ADMIN_ID}")
+    except Exception as e:
+        logging.error(f"Failed to set menu commands: {e}")
+    
+    await asyncio.sleep(1)
+    try:
+        await app.bot.send_message(ADMIN_ID, "🔄 BOT RESTARTED V8\n✅ Menu Button Added!\nAdmin sees all commands, users see only /start\nBot is online!")
     except:
         pass
     for uid in list(ALLOWED_USERS.keys()):
         try:
-            await app.bot.send_message(int(uid), "BOT RESTARTED\nActivation Bot V7 is online again!")
+            await app.bot.send_message(int(uid), "🔄 BOT RESTARTED\n✅ V8 Menu Update!\nBot is online again!")
         except:
             pass
 
@@ -633,7 +655,7 @@ def main():
     app.add_handler(MessageHandler(filters.FORWARDED & filters.User(user_id=ADMIN_ID), get_id_by_username))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_chat))
     
-    print("Bot Started V7 - Final with all requested changes")
+    print("Bot Started V8 - Menu Button Feature")
     app.run_polling(stop_signals=None, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
